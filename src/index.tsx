@@ -1,6 +1,7 @@
 import { Action, ActionPanel, Detail, List } from "@vicinae/api";
 import { useEffect, useMemo, useState } from "react";
-import { Keybinding, readGnomeKeybindings, renderKeybindingsMarkdown } from "./lib/gnome-keybindings";
+import type { Keybinding } from "./lib/gnome-keybindings";
+import { readGnomeKeybindings, renderKeybindingsMarkdown } from "./lib/gnome-keybindings";
 
 function normalizeSearch(value: string): string {
   return value
@@ -27,27 +28,25 @@ function unique<T>(values: T[]): T[] {
   return Array.from(new Set(values));
 }
 
-function shortcutSubtitle(item: Keybinding): string {
-  const binding = item.bindings.join(" / ");
-  if (item.command) return `${binding} → ${item.command}`;
-  return binding;
+function shortcutSubtitle(item: Keybinding): string | undefined {
+  return item.command || undefined;
 }
 
 function shortcutMarkdown(item: Keybinding): string {
   const lines = [
     `# ${item.name}`,
     "",
-    `**Atajo:** ${item.bindings.map((binding) => `\`${binding}\``).join(" / ")}`,
+    `**Shortcut:** ${item.bindings.map((binding) => `\`${binding}\``).join(" / ")}`,
     "",
-    `**Sección:** ${item.section}`,
+    `**Section:** ${item.section}`,
     "",
   ];
 
   if (item.command) {
-    lines.push("**Comando:**", "", "```bash", item.command, "```", "");
+    lines.push("**Command:**", "", "```bash", item.command, "```", "");
   }
 
-  lines.push(`**Fuente:** \`${item.source}\``);
+  lines.push(`**Source:** \`${item.source}\``);
 
   return lines.join("\n");
 }
@@ -58,13 +57,13 @@ function ErrorDetail({ message, onReload }: { message: string; onReload: () => v
       markdown={[
         "# GNOME Keybindings",
         "",
-        "No pude leer los atajos de GNOME.",
+        "Could not read GNOME keyboard shortcuts.",
         "",
         "```text",
         message,
         "```",
         "",
-        "Verificá que `gsettings` funcione desde la misma sesión de usuario:",
+        "Make sure `gsettings` works from your user session:",
         "",
         "```bash",
         "gsettings list-recursively org.gnome.desktop.wm.keybindings",
@@ -72,7 +71,7 @@ function ErrorDetail({ message, onReload }: { message: string; onReload: () => v
       ].join("\n")}
       actions={
         <ActionPanel>
-          <Action title="Recargar" onAction={onReload} />
+          <Action title="Reload" onAction={onReload} />
         </ActionPanel>
       }
     />
@@ -84,12 +83,12 @@ function ShortcutActions({ item, markdown, onReload }: { item: Keybinding; markd
 
   return (
     <ActionPanel>
-      <Action.Push title="Ver Detalle" target={<Detail markdown={shortcutMarkdown(item)} />} />
-      <Action.CopyToClipboard title="Copiar Atajo" content={binding} />
-      <Action.CopyToClipboard title="Copiar Acción" content={item.name} />
-      {item.command ? <Action.CopyToClipboard title="Copiar Comando" content={item.command} /> : null}
-      <Action.CopyToClipboard title="Copiar Cheatsheet Completa" content={markdown} />
-      <Action title="Recargar" onAction={onReload} />
+      <Action.Push title="View Details" target={<Detail markdown={shortcutMarkdown(item)} />} />
+      <Action.CopyToClipboard title="Copy Shortcut" content={binding} />
+      <Action.CopyToClipboard title="Copy Action" content={item.name} />
+      {item.command ? <Action.CopyToClipboard title="Copy Command" content={item.command} /> : null}
+      <Action.CopyToClipboard title="Copy Full Cheatsheet" content={markdown} />
+      <Action title="Reload" onAction={onReload} />
     </ActionPanel>
   );
 }
@@ -135,7 +134,7 @@ export default function Command() {
   return (
     <List
       isLoading={isLoading}
-      searchBarPlaceholder="Buscar por atajo, acción, comando o sección..."
+      searchBarPlaceholder="Search by shortcut, action, command or section..."
       onSearchTextChange={setSearchText}
       filtering={false}
     >
@@ -149,7 +148,12 @@ export default function Command() {
                 key={`${item.section}-${item.source}-${item.bindings.join("|")}`}
                 title={item.name}
                 subtitle={shortcutSubtitle(item)}
-                accessories={[{ text: item.section }]}
+                accessories={[
+                  ...item.bindings.map((binding) => ({
+                    tag: binding,
+                  })),
+                  { text: item.section },
+                ]}
                 keywords={[item.section, item.source, item.command ?? "", ...item.bindings]}
                 actions={<ShortcutActions item={item} markdown={fullMarkdown} onReload={reload} />}
               />
@@ -160,12 +164,12 @@ export default function Command() {
 
       {!isLoading && filteredItems.length === 0 ? (
         <List.EmptyView
-          title="Sin resultados"
-          description="No encontré atajos que coincidan con esa búsqueda."
+          title="No results"
+          description="No shortcuts match your search."
           actions={
             <ActionPanel>
-              <Action title="Recargar" onAction={reload} />
-              <Action.CopyToClipboard title="Copiar Cheatsheet Completa" content={fullMarkdown} />
+              <Action title="Reload" onAction={reload} />
+              <Action.CopyToClipboard title="Copy Full Cheatsheet" content={fullMarkdown} />
             </ActionPanel>
           }
         />

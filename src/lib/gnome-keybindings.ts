@@ -1,5 +1,7 @@
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
+import { existsSync, readFileSync } from "node:fs";
+import { join } from "node:path";
 
 const execFileAsync = promisify(execFile);
 
@@ -18,7 +20,7 @@ type SchemaDefinition = {
 
 const SCHEMAS: SchemaDefinition[] = [
   {
-    section: "Ventanas",
+    section: "Windows",
     schema: "org.gnome.desktop.wm.keybindings",
   },
   {
@@ -26,11 +28,11 @@ const SCHEMAS: SchemaDefinition[] = [
     schema: "org.gnome.shell.keybindings",
   },
   {
-    section: "Mutter / compositor",
+    section: "Mutter / Compositor",
     schema: "org.gnome.mutter.keybindings",
   },
   {
-    section: "Sistema y multimedia",
+    section: "System & Multimedia",
     schema: "org.gnome.settings-daemon.plugins.media-keys",
   },
 ];
@@ -60,52 +62,56 @@ function normalizeWhitespace(value: string): string {
   return value.replace(/\s+/g, " ").trim();
 }
 
-function titleize(key: string): string {
-  const known: Record<string, string> = {
-    close: "Cerrar ventana",
-    minimize: "Minimizar ventana",
-    maximize: "Maximizar ventana",
-    "unmaximize": "Restaurar ventana",
-    "toggle-maximized": "Maximizar/restaurar ventana",
-    "switch-applications": "Cambiar aplicación",
-    "switch-windows": "Cambiar ventana",
-    "switch-group": "Cambiar ventana del mismo grupo",
-    "show-desktop": "Mostrar escritorio",
-    "panel-main-menu": "Abrir menú principal",
-    "toggle-message-tray": "Bandeja de mensajes",
-    "toggle-overview": "Vista de actividades",
-    screensaver: "Bloquear pantalla",
-    home: "Carpeta personal",
-    www: "Navegador web",
-    email: "Correo electrónico",
-    terminal: "Terminal",
-    calculator: "Calculadora",
-    screenshot: "Captura de pantalla",
-    "area-screenshot": "Captura de área",
-    "window-screenshot": "Captura de ventana",
-    "screenshot-clip": "Captura al portapapeles",
-    "area-screenshot-clip": "Captura de área al portapapeles",
-    "window-screenshot-clip": "Captura de ventana al portapapeles",
-    "volume-up": "Subir volumen",
-    "volume-down": "Bajar volumen",
-    "volume-mute": "Silenciar volumen",
-    "mic-mute": "Silenciar micrófono",
-    "play": "Reproducir/pausar",
-    "pause": "Pausar",
-    "stop": "Detener reproducción",
-    "next": "Siguiente pista",
-    "previous": "Pista anterior",
-  };
+const SCHEMA_DIRS = [
+  "/usr/share/glib-2.0/schemas",
+  "/usr/local/share/glib-2.0/schemas",
+];
 
-  if (known[key]) return known[key];
+const schemaSummaryCache = new Map<string, Record<string, string>>();
+
+function loadSchemaSummaries(schemaName: string): Record<string, string> {
+  if (schemaSummaryCache.has(schemaName)) {
+    return schemaSummaryCache.get(schemaName)!;
+  }
+
+  const summaries: Record<string, string> = {};
+
+  for (const dir of SCHEMA_DIRS) {
+    const filePath = join(dir, `${schemaName}.gschema.xml`);
+    if (!existsSync(filePath)) continue;
+
+    try {
+      const xml = readFileSync(filePath, "utf-8");
+      const keyRegex = /<key\s+name="([^"]+)">([\s\S]*?)<\/key>/g;
+      let match: RegExpExecArray | null;
+      while ((match = keyRegex.exec(xml)) !== null) {
+        const keyName = match[1];
+        const body = match[2];
+        if (!keyName || !body) continue;
+        const summaryMatch = body.match(/<summary>([^<]*)<\/summary>/);
+        const summary = summaryMatch?.[1];
+        if (summary) {
+          summaries[keyName] = summary.trim();
+        }
+      }
+    } catch {
+      // Ignore unreadable files
+    }
+    break;
+  }
+
+  schemaSummaryCache.set(schemaName, summaries);
+  return summaries;
+}
+
+function getKeyName(schema: string, key: string): string {
+  const summaries = loadSchemaSummaries(schema);
+  if (summaries[key]) return summaries[key];
 
   return key
-    .replace(/^switch-to-workspace-/, "Ir al espacio de trabajo ")
-    .replace(/^move-to-workspace-/, "Mover al espacio de trabajo ")
-    .replace(/^move-to-monitor-/, "Mover al monitor ")
     .replace(/-/g, " ")
     .replace(/_/g, " ")
-    .replace(/\b\w/g, (char) => char.toUpperCase());
+    .replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
 function parseQuotedValues(value: string): string[] {
@@ -230,13 +236,13 @@ async function readSchema(definition: SchemaDefinition): Promise<Keybinding[]> {
 
     items.push({
       section: definition.section,
-      name: titleize(key),
+      name: getKeyName(definition.schema, key),
       bindings: unique(bindings.map(formatBinding)),
       source: key,
     });
   }
 
-  return items.sort((a, b) => a.name.localeCompare(b.name, "es"));
+  return items.sort((a, b) => a.name.localeCompare(b.name));
 }
 
 async function getString(schemaWithPath: string, key: string): Promise<string> {
@@ -272,15 +278,15 @@ async function readCustomShortcuts(): Promise<Keybinding[]> {
     if (!looksLikeKeybinding(binding)) continue;
 
     items.push({
-      section: "Personalizados",
-      name: normalizeWhitespace(name || command || "Atajo personalizado"),
+      section: "Custom",
+      name: normalizeWhitespace(name || command || "Custom shortcut"),
       command: normalizeWhitespace(command),
       bindings: [formatBinding(binding)],
       source: path,
     });
   }
 
-  return items.sort((a, b) => a.name.localeCompare(b.name, "es"));
+  return items.sort((a, b) => a.name.localeCompare(b.name));
 }
 
 export async function readGnomeKeybindings(): Promise<Keybinding[]> {
@@ -296,7 +302,7 @@ function markdownEscape(value: string): string {
 
 function renderTable(items: Keybinding[]): string {
   const hasCommand = items.some((item) => item.command);
-  const headers = hasCommand ? "| Atajo | Acción | Comando |\n|---|---|---|" : "| Atajo | Acción |\n|---|---|";
+  const headers = hasCommand ? "| Shortcut | Action | Command |\n|---|---|---|" : "| Shortcut | Action |\n|---|---|";
 
   const rows = items.map((item) => {
     const binding = item.bindings.map(markdownEscape).join(" / ");
@@ -318,9 +324,9 @@ export function renderKeybindingsMarkdown(items: Keybinding[]): string {
     return [
       "# GNOME Keybindings",
       "",
-      "No encontré atajos activos mediante `gsettings`.",
+      "No active shortcuts found via `gsettings`.",
       "",
-      "Verificá que estés ejecutando Vicinae dentro de una sesión GNOME y que `gsettings` esté disponible.",
+      "Make sure you are running Vicinae inside a GNOME session and `gsettings` is available.",
     ].join("\n");
   }
 
@@ -328,7 +334,7 @@ export function renderKeybindingsMarkdown(items: Keybinding[]): string {
   const lines: string[] = [
     "# GNOME Keybindings",
     "",
-    "Atajos detectados automáticamente desde `gsettings` / `dconf`.",
+    "Shortcuts automatically detected from `gsettings` / `dconf`.",
     "",
   ];
 
@@ -344,7 +350,7 @@ export function renderKeybindingsMarkdown(items: Keybinding[]): string {
 
   lines.push("---");
   lines.push("");
-  lines.push("Generado dinámicamente. No hay que mantener ningún archivo manual de atajos.");
+  lines.push("Dynamically generated. No manual shortcut file to maintain.");
 
   return lines.join("\n");
 }

@@ -137,7 +137,7 @@ Use Vicinae’s `Copy Deeplink` action to get the exact provider and entrypoint 
 The provider may include your extension author scope, for example:
 
 ```text
-vicinae://launch/@Rodrigo/gnome-keybindings/index
+vicinae://launch/@rodrigoGA/gnome-keybindings/index
 ```
 
 ## License

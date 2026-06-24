@@ -2,7 +2,7 @@
   "$schema": "https://raw.githubusercontent.com/vicinaehq/vicinae/refs/heads/main/extra/schemas/extension.json",
   "name": "gnome-keybindings",
   "title": "GNOME Keybindings",
-  "description": "Searchable GNOME keyboard shortcuts for Vicinae, generated automatically from gsettings/dconf.",
+  "description": "Browse and search GNOME keyboard shortcuts from Vicinae.",
   "categories": [
     "System"
   ],
